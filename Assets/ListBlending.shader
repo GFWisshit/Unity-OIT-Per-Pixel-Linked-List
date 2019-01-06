@@ -3,8 +3,9 @@
 	Properties
 	{
 		_MainTex("Texture", 2D) = "white" {}
+		_AntiAliasing("AntiAliasing", Int) = 1
 	}
-		SubShader
+	SubShader
 	{
 		Tags { "Queue" = "Transparent" "IgnoreProjector" = "true" "RenderType" = "Transparent" }
 		LOD 100
@@ -40,13 +41,15 @@
 				float4 pixelColor;
 				float depth;
 				uint next;
+				uint coverage;
 			};
 
-			StructuredBuffer<ListNode> ListNodeBuffer;
-			ByteAddressBuffer ListHeadBuffer;
+			StructuredBuffer<ListNode> listNodeBuffer;
+			ByteAddressBuffer listHeadBuffer;
 
 			sampler2D _MainTex;
 			float4 _MainTex_ST;
+			int _AntiAliasing;
 
 			v2f vert(appdata v)
 			{
@@ -59,44 +62,65 @@
 			fixed4 frag(v2f i) : SV_Target
 			{
 				// sample the texture
-				fixed4 col = tex2D(_MainTex, i.uv);
+				//fixed4 col = tex2D(_MainTex, i.uv);
+				fixed4 col[8];
+				col[0] = tex2D(_MainTex, i.uv);
+				for (int index = 1; index < _AntiAliasing; index++)
+					col[index] = col[0];
 
-				uint HeadBufferOffset;
+				uint headBufferOffset;
 				#if UNITY_UV_STARTS_AT_TOP
-					HeadBufferOffset = 4 * ((_ScreenParams.x * (_ScreenParams.y - i.vertex.y - 0.5)) + (i.vertex.x - 0.5));
+					headBufferOffset = 4 * ((_ScreenParams.x * (_ScreenParams.y - i.vertex.y - 0.5)) + (i.vertex.x - 0.5));
 				#else
-					HeadBufferOffset = 4 * ((_ScreenParams.x * (i.vertex.y - 0.5)) + (i.vertex.x - 0.5));
-				#endif	
+					headBufferOffset = 4 * ((_ScreenParams.x * (i.vertex.y - 0.5)) + (i.vertex.x - 0.5));
+				#endif
 
-				uint NodeIndex = ListHeadBuffer.Load(HeadBufferOffset);
-				uint SortedNodeIndex[8];
+				uint nodeIndex = listHeadBuffer.Load(headBufferOffset);
+				uint sortedNodeIndex[8];
 				int count = 0;
-				while (NodeIndex != 0)
+				while (nodeIndex != 0)
 				{
-					SortedNodeIndex[count++] = NodeIndex;
+					sortedNodeIndex[count++] = nodeIndex;
 					if (count >= 8)
-						NodeIndex = 0;
+						nodeIndex = 0;
 					else
-						NodeIndex = ListNodeBuffer[NodeIndex].next;
+						nodeIndex = listNodeBuffer[nodeIndex].next;
 				}
 
 				for (int i = 0; i < count - 1; i++)
 				{
 					int max = i;
 					for (int j = i + 1; j < count; j++)
-						if (ListNodeBuffer[SortedNodeIndex[j]].depth > ListNodeBuffer[SortedNodeIndex[max]].depth)
+						if (listNodeBuffer[sortedNodeIndex[j]].depth > listNodeBuffer[sortedNodeIndex[max]].depth)
 							max = j;
-					uint temp = SortedNodeIndex[i];
-					SortedNodeIndex[i] = SortedNodeIndex[max];
-					SortedNodeIndex[max] = temp;
+					uint temp = sortedNodeIndex[i];
+					sortedNodeIndex[i] = sortedNodeIndex[max];
+					sortedNodeIndex[max] = temp;
 				}
 
 				for (int i = 0; i < count; i++)
 				{
-					col = ListNodeBuffer[SortedNodeIndex[i]].pixelColor * ListNodeBuffer[SortedNodeIndex[i]].pixelColor.a + col * (1 - ListNodeBuffer[SortedNodeIndex[i]].pixelColor.a);
+					if (_AntiAliasing == 1)
+					{
+						col[0] = listNodeBuffer[sortedNodeIndex[i]].pixelColor * listNodeBuffer[sortedNodeIndex[i]].pixelColor.a + col[0] * (1 - listNodeBuffer[sortedNodeIndex[i]].pixelColor.a);
+					}
+					else
+					{
+						uint coverage = listNodeBuffer[sortedNodeIndex[i]].coverage;
+						for (int c = 0; coverage; c++)
+						{
+							if (coverage & 1)
+								col[c] = listNodeBuffer[sortedNodeIndex[i]].pixelColor * listNodeBuffer[sortedNodeIndex[i]].pixelColor.a + col[c] * (1 - listNodeBuffer[sortedNodeIndex[i]].pixelColor.a);
+							coverage >>= 1;
+						}
+					}
 				}
 
-				return col;
+				fixed4 resolveColor = col[0];
+				for (int index = 1; index < _AntiAliasing; index++)
+					resolveColor += col[index];
+
+				return resolveColor / _AntiAliasing;
 			}
 			ENDCG
 		}

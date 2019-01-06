@@ -42,10 +42,11 @@
 				float4 pixelColor;
 				float depth;
 				uint next;
+				uint coverage;
 			};
 
-			RWStructuredBuffer<ListNode> ListNodeBuffer : register(u1);
-			RWByteAddressBuffer ListHeadBuffer : register(u2);
+			RWStructuredBuffer<ListNode> listNodeBuffer : register(u1);
+			RWByteAddressBuffer listHeadBuffer : register(u2);
 
             sampler2D _MainTex;
             float4 _MainTex_ST;
@@ -61,7 +62,7 @@
                 return o;
             }
 
-            fixed4 frag (v2f i) : SV_Target
+            fixed4 frag (v2f i, in uint coverage : SV_Coverage) : SV_Target
             {
                 // sample the texture
                 // fixed4 col = tex2D(_MainTex, i.uv);
@@ -71,15 +72,16 @@
 
 				if (Linear01Depth(i.vertex.z) <= Linear01Depth(depth))
 				{
-					uint count = ListNodeBuffer.IncrementCounter();
-					uint HeadBufferOffset = 4 * ((_ScreenParams.x * (i.vertex.y - 0.5)) + (i.vertex.x - 0.5));
-					uint OldHeadNodeIndex;
-					ListHeadBuffer.InterlockedExchange(HeadBufferOffset, count, OldHeadNodeIndex);
-					ListNode Node;
-					Node.pixelColor = col;
-					Node.depth = Linear01Depth(i.vertex.z);
-					Node.next = OldHeadNodeIndex;
-					ListNodeBuffer[count] = Node;
+					uint count = listNodeBuffer.IncrementCounter();
+					uint headBufferOffset = 4 * ((_ScreenParams.x * (i.vertex.y - 0.5)) + (i.vertex.x - 0.5));
+					uint oldHeadNodeIndex;
+					listHeadBuffer.InterlockedExchange(headBufferOffset, count, oldHeadNodeIndex);
+					ListNode node;
+					node.pixelColor = col;
+					node.depth = Linear01Depth(i.vertex.z);
+					node.next = oldHeadNodeIndex;
+					node.coverage = coverage;
+					listNodeBuffer[count] = node;
 				}
                 return col;
             }

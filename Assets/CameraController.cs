@@ -21,6 +21,7 @@ public class CameraController : MonoBehaviour
         public Vector4 pixelColor;
         public float depth;
         public uint next;
+        public uint coverage;
     }
 
     private ComputeBuffer m_listNodeBuffer;
@@ -35,7 +36,7 @@ public class CameraController : MonoBehaviour
         m_blendMaterial = new Material(m_listBlendingShader);
 
         int m_bufferSize = Screen.width * Screen.height * m_size;
-        int m_bufferStride = sizeof(float) * 5 + sizeof(uint);
+        int m_bufferStride = sizeof(float) * 5 + sizeof(uint) * 2;
         m_listNodeBuffer = new ComputeBuffer(m_bufferSize, m_bufferStride, ComputeBufferType.Counter);
 
         m_bufferSize = Screen.width * Screen.height;
@@ -81,8 +82,9 @@ public class CameraController : MonoBehaviour
             m_transparentCamera.targetTexture = source;
             m_transparentCamera.RenderWithShader(m_listCreationShader, null);
             Graphics.ClearRandomWriteTargets();
-            m_blendMaterial.SetBuffer("ListNodeBuffer", m_listNodeBuffer);
-            m_blendMaterial.SetBuffer("ListHeadBuffer", m_listHeadBuffer);
+            m_blendMaterial.SetBuffer("listNodeBuffer", m_listNodeBuffer);
+            m_blendMaterial.SetBuffer("listHeadBuffer", m_listHeadBuffer);
+            m_blendMaterial.SetInt("_AntiAliasing", source.antiAliasing);
             Graphics.Blit(source, destination, m_blendMaterial);
         }
         else
